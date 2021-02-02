@@ -26,9 +26,9 @@ def _param_registry():
 
 class ParamType:
     '''Type of parameters'''
-    ENUM = "enum"
-    BOOL = "bool"
-    FLOAT = "float"
+    ENUM = "enum" # "enum" saved as "discrete uniform" i.e. 7 (stats array) and Enum parameters produce one boolean parameter for each possible enum value
+    BOOL = "bool" # "bool" saved as "discrete uniform" i.e. 7 (stats array)
+    FLOAT = "float" # "float" can represent uniform (4), normal (3), triangle (5) and beta (10) distribution
 
 
 class DistributionType:
@@ -325,15 +325,75 @@ def loadParams():
     for bwParam in ProjectParameter.select():
 
         name = bwParam.name
-        data = dict(bwParam.data)
-
-
-        if not 'type' in data :
+        data = dict(bwParam.dict) #.data and .dict not the same .dict has name and amount and uncertainty array
+        
+        print(bwParam.dict)
+        #print(data)
+        
+        if not 'type' in data and not 'uncertainty type' in data :
             print('No type found for param %s : skipping' % name)
             continue
+            
+        # "float" can represent uniform (4), normal (3), triangle (5) and beta (10) distribution
+        mapping_types_bw2alg = {
+            7: (ParamType.ENUM, None),
+           #7: ParamType.BOOL,
+            3: (ParamType.FLOAT, DistributionType.NORMAL), 
+            4: (ParamType.FLOAT, DistributionType.LINEAR),
+            5: (ParamType.FLOAT, DistributionType.TRIANGLE),
+            10: (ParamType.FLOAT, DistributionType.BETA),
+        }
+        
+        mapping_keys_bw2alg = {
+            'uncertainty type': ('type', 'distrib'),
+            'loc': None, # not sure
+            'scale':'std',
+            'shape':'b', # not sure
+            'minimum':'min',
+            'maximum':'max',
+            'negative':None,
+            'amount':'default',
+            'name':'name',
+        }
 
-        type = data['type']
-        del data['type']
+        mapping_keys_alg2bw = {
+            'type': 'uncertainty type',
+            'default': 'amount', 
+            'description': 'Co-production ratio, MJ heat per kg biochar',
+            'min': 'minimum',
+            'max': 'maximum',
+            'a': 'loc',
+            'b': 'shape',
+            'std': 'scale',
+            'unit': None,
+            'label': None,
+            'label_fr': None,
+            'group': None,
+            'distrib': None
+        }
+        
+        if not 'type' in data and 'uncertainty type' in data :
+            print('Native parameter from bw2-ab,  %s' % name)
+            type = mapping_types_bw2alg[ data['uncertainty type'] ][0] # replace by a lca_algebraic type
+            distrib = mapping_types_bw2alg[ data['uncertainty type'] ][1]
+            del data['uncertainty type']
+            
+            # re-write dict to match keys from lca_algebraic params, so that param creating functions work
+            for key_bw, key_alg in mapping_keys_bw2alg.items():
+                if key_bw == 'uncertainty type':
+                    continue # we skip that one, already tackled above, via tuple
+                
+                if key_bw in data and not key_alg == None:
+                    data[key_alg] = data[key_bw]
+                    del data[key_bw] # maybe we don't need to delete it?
+                    
+            print(data)
+            
+        if 'type' in data and not 'uncertainty type' in data :
+            print('Native parameter from lca_algebraic, %s' % name)
+            type = data['type']
+            del data['name']
+            del data['type']
 
 
         if type == ParamType.BOOL :
